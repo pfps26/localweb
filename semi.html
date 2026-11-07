@@ -1,0 +1,1145 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>START</title>
+  <style>
+    * { box-sizing: border-box; }
+
+    /* --u : 화면의 짧은 변. 크기를 이 값의 비율로 잡아서 화면 크기에 맞춤 */
+    html {
+      --u: min(100vw, 100vh);
+      width: 100%;
+      height: 100%;
+      margin: 0;
+    }
+
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      font-family: Arial, Helvetica, sans-serif;
+      background: #fff;
+    }
+
+    /* 원 주변에서 휘어지는 격자 (캔버스로 그림) */
+    #lens {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* 화면 한가운데 있는 START 원 (크기·등장 효과는 JS가 제어) */
+    .circle {
+      position: relative;
+      z-index: 1;
+      width: calc(var(--u) * .20);
+      height: calc(var(--u) * .20);
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      overflow: hidden;           /* 글자가 원 밖으로 나가면 잘려서 사라짐 */
+      background: #000;
+      transform: scale(0);
+    }
+
+    .start-button {
+      width: 100%;
+      height: 100%;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      background: transparent;
+      color: #fff;
+      font-size: calc(var(--u) * .035);
+      font-weight: 900;
+      letter-spacing: calc(var(--u) * .016);
+      cursor: pointer;
+      outline: none;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* 안내바 글자처럼 오른쪽에서 왼쪽으로 일정한 속도로 계속 지나감 */
+    .start-text {
+      display: block;
+      white-space: nowrap;
+      transform: translateX(calc(var(--u) * .24));
+      animation: marquee 5s linear 900ms infinite both;
+    }
+
+    /* + 버튼으로 추가되는 공전 원들이 들어가는 층 */
+    #field {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    .satellite {
+      position: absolute;
+      top: 0;
+      left: 0;
+      border-radius: 50%;
+      background: #000;
+      will-change: transform;
+    }
+
+    /* 우측 하단 주황색 + 버튼 */
+    .add {
+      position: fixed;
+      right: 28px;
+      bottom: 28px;
+      z-index: 6;
+      width: 64px;
+      height: 64px;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      background: #ff7a00;
+      cursor: pointer;
+      outline: none;
+      -webkit-tap-highlight-color: transparent;
+      transition: transform 160ms ease, opacity 200ms ease;
+    }
+
+    .add::before, .add::after {
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      background: #fff;
+      border-radius: 2px;
+      transform: translate(-50%, -50%);
+    }
+    .add::before { width: 28px; height: 4px; }
+    .add::after  { width: 4px;  height: 28px; }
+
+    .add:hover  { transform: scale(1.08); }
+    .add:active { transform: scale(.94); }
+    .add:focus-visible { outline: 3px solid #000; outline-offset: 3px; }
+    .add:disabled { opacity: .3; cursor: default; transform: none; }
+
+    /* 커서를 올린 원에 뜨는 게임 이름표 */
+    #tip {
+      position: fixed;
+      left: 0;
+      top: 0;
+      z-index: 7;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: #111;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 120ms ease;
+    }
+
+    /* ───────── 게임 화면 ───────── */
+    #gm {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: none;
+      place-items: center;
+      background: rgba(0, 0, 0, .55);
+    }
+    #gm.open { display: grid; }
+
+    .panel {
+      width: min(94vw, 440px);
+      max-height: 96vh;
+      display: flex;
+      flex-direction: column;
+      padding: 12px 12px 14px;
+      border-radius: 18px;
+      background: #161616;
+      color: #fff;
+      overflow: hidden;
+    }
+
+    .bar { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .bar h2 { flex: 1; margin: 0; font-size: 16px; }
+    .score { font-size: 13px; color: #ffb066; }
+    .x {
+      width: 32px; height: 32px; padding: 0;
+      border: 0; border-radius: 50%;
+      background: #2a2a2a; color: #fff;
+      font-size: 20px; line-height: 1; cursor: pointer;
+    }
+
+    #host { position: relative; flex: 1; min-height: 0; overflow: auto; }
+
+    .gcanvas {
+      display: block;
+      margin: 0 auto;
+      width: auto;
+      height: auto;
+      max-width: 100%;
+      max-height: calc(96vh - 90px);
+      border-radius: 10px;
+      touch-action: none;
+    }
+
+    .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; max-width: 340px; margin: 0 auto; }
+    .gridN { display: grid; gap: 8px; max-width: 360px; margin: 0 auto; }
+    .cell, .card {
+      aspect-ratio: 1;
+      border: 0; border-radius: 12px;
+      background: #262626; color: #fff;
+      font-weight: 900; cursor: pointer;
+    }
+    .cell { font-size: clamp(22px, 8vw, 46px); }
+    .card { font-size: clamp(22px, 7vw, 38px); }
+    .cell:hover:not(:disabled) { background: #333; }
+    .card.up   { background: #fff; }
+    .card.done { background: #ff7a00; }
+
+    .sm   { max-width: 360px; margin: 0 auto; text-align: center; }
+    .msg  { margin: 14px 0; color: #ddd; font-size: 15px; }
+    .row  { display: flex; gap: 8px; justify-content: center; }
+    .row input {
+      width: 140px; padding: 10px 12px;
+      border: 0; border-radius: 10px;
+      background: #262626; color: #fff; font-size: 16px;
+    }
+    .word { margin: 24px 0; font-size: clamp(48px, 16vw, 84px); font-weight: 900; text-align: center; }
+
+    .btn {
+      padding: 10px 18px;
+      border: 0; border-radius: 999px;
+      background: #ff7a00; color: #fff;
+      font-size: 15px; font-weight: 800; cursor: pointer;
+    }
+
+    .res {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-content: center;
+      gap: 14px;
+      padding: 20px;
+      border-radius: 12px;
+      background: rgba(0, 0, 0, .78);
+      text-align: center;
+    }
+    .res p { margin: 0; font-size: 18px; font-weight: 800; }
+
+    @keyframes marquee {
+      from { transform: translateX(calc(var(--u) * .24)); }
+      to   { transform: translateX(calc(var(--u) * -.24)); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .start-text { animation: none; transform: none; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="lens" aria-hidden="true"></canvas>
+
+  <main class="circle" id="circle" aria-label="중앙 원">
+    <button class="start-button" id="start" type="button" aria-label="Start">
+      <span class="start-text" aria-hidden="true">START</span>
+    </button>
+  </main>
+
+  <div id="field" aria-hidden="true"></div>
+
+  <button class="add" id="add" type="button" aria-label="원 추가"></button>
+  <div id="tip" aria-hidden="true"></div>
+
+  <div id="gm" role="dialog" aria-modal="true" aria-label="게임">
+    <div class="panel">
+      <div class="bar">
+        <h2 id="gtitle"></h2>
+        <span class="score" id="gscore"></span>
+        <button class="x" id="gclose" type="button" aria-label="닫기">×</button>
+      </div>
+      <div id="host"></div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+      var TWO_PI = Math.PI * 2;
+
+      /*<LAYOUT>*/
+      /* ───────── 1. 원 배치 만들기 ─────────
+       * 길이는 모두 화면 짧은 변 U에 대한 비율, 좌표는 화면 중심 기준(x 오른쪽, y 아래쪽).
+       * 별자리(북두칠성 등) 모양이나 완전 무작위 배치를 고른 뒤, 그 배치 전체가 모양을 유지한 채
+       * 중앙 둘레를 함께 공전한다 → 서로 간격이 변하지 않으므로 몇 개가 떠 있어도 충돌하지 않는다.
+       * 커서를 올려 커졌을 때의 크기까지 계산해서 간격을 잡는다. */
+      var CENTER_R = 0.10;    // 중앙 START 원 반지름
+      var GAP      = 0.012;   // 원 사이 최소 여유
+      var HOVER    = 1.5;     // 커서를 올렸을 때 커지는 배율
+      var EDGE     = 0.485;   // 원이 닿을 수 있는 가장 바깥쪽
+      var SMIN     = 0.034;   // 원 지름 최소
+      var SMAX     = 0.095;   // 원 지름 최대
+      var MAXN     = 10;      // 추가할 수 있는 원의 최대 개수
+
+      // 실제 별 위치(적경·적위)를 평면에 옮긴 좌표. 별을 이은 순서대로 적혀 있어서 + 를 누를 때마다 그 순서로 채워진다.
+      var PATTERNS = [
+        { name: '북두칠성', pts: [[10.96,-6.75],[11.19,-1.38],[3.73,1.31],[0.63,-2.03],[-4.88,-0.96],[-9.18,0.07],[-12.57,5.69]] },
+        { name: '카시오페이아', pts: [[6.35,0.85],[2.45,3.46],[-0.1,-0.72],[-3.25,-0.24],[-6.8,-3.67]] },
+        { name: '오리온', pts: [[-4.8,-7.41],[2.7,-6.35],[1.0,0.3],[0,1.2],[-1.2,1.94],[-2.9,9.67],[5.4,8.2]] },
+        { name: '남십자성', pts: [[0.1,-2.89],[0.66,3.1],[-1.93,-0.31],[2.1,-1.25],[-11.3,0.37],[-15.6,0.8]] },
+        { name: '사자자리', pts: [[10.5,6.03],[10.6,1.24],[7.6,-1.84],[8.4,-5.42],[14.07,-8.01],[-5.25,-2.52],[-5.28,2.57],[-13.5,3.43]] },
+        { name: '전갈자리', pts: [[10.1,-10.19],[10.1,-7.38],[10.4,-3.89],[3.95,-3.57],[-0.46,4.29],[-0.82,8.05],[-1.28,12.36],[-5.13,13.24],[-10.5,12.99],[-9.7,7.1]] }
+      ];
+
+      // 두 원(지름 a, b)의 중심 사이에 필요한 최소 거리 (한쪽이 커진 경우까지 포함)
+      function need(a, b) { return (HOVER * Math.max(a, b) + Math.min(a, b)) / 2 + GAP; }
+
+      // 중심에서 r 떨어진 곳에 둘 수 있는 원의 최대 지름 (중앙 원과 화면 가장자리 기준)
+      function capBoundary(r) {
+        return Math.min(2 * (r - CENTER_R - GAP) / HOVER, 2 * (EDGE - r) / HOVER);
+      }
+
+      // 이미 있는 지름 sj인 원과 거리 d만큼 떨어진 곳에 둘 수 있는 원의 최대 지름
+      function capPair(d, sj) {
+        var c1 = (2 * (d - GAP) - sj) / HOVER;
+        if (c1 >= sj) return c1;
+        return 2 * (d - GAP) - HOVER * sj;
+      }
+
+      // 겹치는 쌍이 있으면 두 원을 같은 비율로 줄여서 간격을 확보
+      function shrinkPairs(q, s) {
+        for (var pass = 0; pass < 40; pass++) {
+          var changed = false;
+          for (var i = 0; i < q.length; i++) {
+            for (var j = i + 1; j < q.length; j++) {
+              var d = Math.hypot(q[i][0] - q[j][0], q[i][1] - q[j][1]);
+              var n = need(s[i], s[j]);
+              if (n > d + 1e-9) {
+                if (d <= GAP) return false;
+                var f = (d - GAP) / (n - GAP);
+                s[i] *= f;
+                s[j] *= f;
+                changed = true;
+              }
+            }
+          }
+          if (!changed) return true;
+        }
+        return false;
+      }
+
+      // 별자리 한 개를 회전·반전·크기·위치를 바꿔가며 중앙 둘레에 놓아보고 가장 잘 들어가는 배치를 고름
+      function fitPattern(pts, rnd) {
+        var n = pts.length, mx = 0, my = 0;
+        pts.forEach(function (p) { mx += p[0]; my += p[1]; });
+        mx /= n; my /= n;
+        var minx = 1e9, maxx = -1e9, miny = 1e9, maxy = -1e9;
+        pts.forEach(function (p) {
+          minx = Math.min(minx, p[0]); maxx = Math.max(maxx, p[0]);
+          miny = Math.min(miny, p[1]); maxy = Math.max(maxy, p[1]);
+        });
+        var ext = Math.max(maxx - minx, maxy - miny);
+        var norm = pts.map(function (p) { return [(p[0] - mx) / ext, (p[1] - my) / ext]; });
+
+        var best = null, bestScore = -1;
+        for (var t = 0; t < 500; t++) {
+          var rot = rnd() * TWO_PI;
+          var flip = rnd() < 0.5 ? -1 : 1;
+          var S = 0.38 + rnd() * 0.50;
+          var D = 0.14 + rnd() * 0.28;
+          var ang = rnd() * TWO_PI;
+          var cs = Math.cos(rot), sn = Math.sin(rot);
+          var ox = D * Math.cos(ang), oy = D * Math.sin(ang);
+          var q = [], s = [], ok = true;
+          for (var i = 0; i < n; i++) {
+            var x = norm[i][0] * flip, y = norm[i][1];
+            var px = ox + S * (x * cs - y * sn);
+            var py = oy + S * (x * sn + y * cs);
+            var cap = capBoundary(Math.hypot(px, py));
+            if (cap < SMIN) { ok = false; break; }
+            q.push([px, py]);
+            s.push(Math.min(cap, SMIN + rnd() * (SMAX - SMIN)));
+          }
+          if (!ok || !shrinkPairs(q, s)) continue;
+          if (Math.min.apply(null, s) < SMIN - 1e-9) continue;
+          var score = s.reduce(function (a, b) { return a + b; }, 0);
+          if (score > bestScore) { bestScore = score; best = { q: q, s: s }; }
+        }
+        return best;
+      }
+
+      // 별자리 뒤에 이어서(또는 완전 무작위 모드에서는 처음부터) 무작위 위치에 원을 더 놓음
+      function addExtras(q, s, count, rnd) {
+        var rMin = CENTER_R + GAP + SMIN * HOVER / 2;
+        var rMax = EDGE - SMIN * HOVER / 2;
+        for (var e = 0; e < count; e++) {
+          var target = SMIN + rnd() * (SMAX - SMIN);
+          var bestSz = 0, bestPos = null;
+          for (var t = 0; t < 300; t++) {
+            var r = rMin + rnd() * (rMax - rMin);
+            var a = rnd() * TWO_PI;
+            var px = r * Math.cos(a), py = r * Math.sin(a);
+            var sz = Math.min(target, capBoundary(r));
+            for (var j = 0; j < q.length && sz >= SMIN; j++) {
+              sz = Math.min(sz, capPair(Math.hypot(px - q[j][0], py - q[j][1]), s[j]));
+            }
+            if (sz > bestSz) { bestSz = sz; bestPos = [px, py]; }
+            if (sz >= target) break;
+          }
+          if (!bestPos || bestSz < SMIN) return false;
+          q.push(bestPos);
+          s.push(bestSz);
+        }
+        return true;
+      }
+
+      // 만에 하나 배치에 실패했을 때 쓰는 안전한 배치 (고리 모양)
+      function fallbackSlots() {
+        var slots = [];
+        for (var i = 0; i < MAXN; i++) {
+          var a = i / MAXN * TWO_PI;
+          slots.push({ size: i % 2 ? 0.05 : 0.07, r: 0.30, phi: a });
+        }
+        return { name: '고리', slots: slots };
+      }
+
+      function buildSlots(rnd) {
+        for (var attempt = 0; attempt < 60; attempt++) {
+          // 별자리 6종 + 완전 무작위 2칸 중에서 고름 (무작위가 나올 확률 25%)
+          var idx = Math.floor(rnd() * (PATTERNS.length + 2));
+          var q = [], s = [], name = '무작위';
+          if (idx < PATTERNS.length) {
+            var fit = fitPattern(PATTERNS[idx].pts, rnd);
+            if (!fit) continue;
+            q = fit.q; s = fit.s; name = PATTERNS[idx].name;
+          }
+          if (!addExtras(q, s, MAXN - q.length, rnd)) continue;
+          return {
+            name: name,
+            slots: q.map(function (p, i) {
+              return { size: s[i], r: Math.hypot(p[0], p[1]), phi: Math.atan2(p[0], -p[1]) };
+            })
+          };
+        }
+        return fallbackSlots();
+      }
+      /*</LAYOUT>*/
+
+      var built = buildSlots(Math.random);
+      var slots = built.slots;
+
+      /* ───────── 2. 기본 요소와 상태 ───────── */
+      var $ = function (id) { return document.getElementById(id); };
+      var canvas = $('lens'), ctx = canvas.getContext('2d');
+      var circleEl = $('circle'), startBtn = $('start'), addBtn = $('add');
+      var field = $('field'), tip = $('tip');
+
+      var ORBIT_PERIOD = 70;   // 배치 전체가 한 바퀴 도는 시간(초), 시계방향
+      var PULL = 1.6;          // 격자를 원 쪽으로 끌어당기는 세기
+      var SWIRL = 0.9;         // 원 둘레로 격자가 감기는 정도(라디안) → 선이 곡선으로 휨
+      var MINOR = 40, MAJOR = 200;   // 격자 간격(px)
+
+      var sats = [];
+      var orbitTime = 0;
+      var pulse = 0;
+      var pointer = null;
+      var gameOpen = false;
+      var tipText = '';
+      var W, H, cx, cy, U, dpr;
+
+      function easeOutBack(t) {
+        var c1 = 1.70158, c3 = c1 + 1;
+        return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+      }
+
+      function addSatellite() {
+        if (sats.length >= slots.length) return;
+        pulse = 0.08;
+        var el = document.createElement('div');
+        el.className = 'satellite';
+        field.appendChild(el);
+        sats.push({
+          slot: slots[sats.length], game: sats.length, el: el,
+          born: performance.now(), hover: 1, x: 0, y: 0, base: 0, appear: 0, scale: 0
+        });
+        if (sats.length >= slots.length) addBtn.disabled = true;
+      }
+
+      addBtn.addEventListener('click', addSatellite);
+      startBtn.addEventListener('click', function () { pulse = 0.08; });
+
+      window.addEventListener('pointermove', function (e) { pointer = [e.clientX, e.clientY]; });
+      document.documentElement.addEventListener('mouseleave', function () { pointer = null; });
+      window.addEventListener('blur', function () { pointer = null; });
+
+      // 원을 누르면 그 원에 연결된 게임이 열림
+      document.addEventListener('click', function (e) {
+        if (gameOpen) return;
+        if (e.target.closest && (e.target.closest('#add') || e.target.closest('#start'))) return;
+        var hit = null, best = Infinity;
+        sats.forEach(function (s) {
+          var d = Math.hypot(e.clientX - s.x, e.clientY - s.y);
+          if (d <= s.base / 2 * s.scale && d < best) { best = d; hit = s; }
+        });
+        if (hit) openGame(hit.game);
+      });
+
+      /* ───────── 3. 격자 굴절: 모든 원이 주변 격자를 끌어당기고 감아서 곡선으로 휘게 함 ───────── */
+      var lensX = [], lensY = [], lensR = [], lensCount = 0, gridK = 0, pt = [0, 0];
+
+      function warp(x, y, out) {
+        var ox = 0, oy = 0;
+        for (var i = 0; i < lensCount; i++) {
+          var dx = x - lensX[i], dy = y - lensY[i];
+          var R = lensR[i];
+          var r = Math.sqrt(dx * dx + dy * dy) || 1e-6;
+          var re = r > 1.4 * R ? r : 1.4 * R;
+          var q = R / re;
+          if (q < 0.02) continue;
+          var rp = re - gridK * PULL * R * q;      // 안쪽으로 끌어당김
+          var f = rp / re;
+          var phi = gridK * SWIRL * q * q;         // 가까울수록 더 많이 감김
+          var c = Math.cos(phi), s = Math.sin(phi);
+          var nx = dx * f, ny = dy * f;
+          ox += nx * c - ny * s - dx;
+          oy += nx * s + ny * c - dy;
+        }
+        out[0] = x + ox;
+        out[1] = y + oy;
+      }
+
+      function line(fromX, fromY, toX, toY) {
+        var len = Math.max(Math.abs(toX - fromX), Math.abs(toY - fromY));
+        var steps = Math.ceil(len / 8);
+        ctx.beginPath();
+        for (var i = 0; i <= steps; i++) {
+          var t = i / steps;
+          warp(fromX + (toX - fromX) * t, fromY + (toY - fromY) * t, pt);
+          if (i === 0) ctx.moveTo(pt[0], pt[1]); else ctx.lineTo(pt[0], pt[1]);
+        }
+        ctx.stroke();
+      }
+
+      function drawGrid() {
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, W, H);
+        ctx.lineWidth = 1;
+        var margin = 80;
+        var nx = Math.ceil((W / 2 + margin) / MINOR);
+        var ny = Math.ceil((H / 2 + margin) / MINOR);
+        [false, true].forEach(function (major) {
+          ctx.strokeStyle = major ? '#d4d4d4' : '#ececec';
+          for (var i = -nx; i <= nx; i++) {
+            if ((i * MINOR % MAJOR === 0) !== major) continue;
+            var x = cx + i * MINOR;
+            line(x, -margin, x, H + margin);
+          }
+          for (var j = -ny; j <= ny; j++) {
+            if ((j * MINOR % MAJOR === 0) !== major) continue;
+            var y = cy + j * MINOR;
+            line(-margin, y, W + margin, y);
+          }
+        });
+      }
+
+      /* ───────── 4. 매 프레임 ───────── */
+      var t0 = performance.now(), last = t0;
+
+      function frame(now) {
+        var dt = Math.min(0.05, (now - last) / 1000);
+        last = now;
+
+        dpr = window.devicePixelRatio || 1;
+        W = window.innerWidth;
+        H = window.innerHeight;
+        cx = W / 2;
+        cy = H / 2;
+        U = Math.min(W, H);
+        var cw = Math.round(W * dpr), ch = Math.round(H * dpr);
+        if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+
+        if (!reduce) orbitTime += dt;
+
+        var pop = reduce ? 1 : easeOutBack(Math.min(1, (now - t0) / 850));
+        pulse *= Math.exp(-dt * 8);
+        var cScale = Math.max(0, pop) * (1 + pulse);
+        circleEl.style.transform = 'scale(' + cScale.toFixed(4) + ')';
+
+        var gt = reduce ? 1 : Math.min(1, Math.max(0, (now - t0 - 150) / 1200));
+        gridK = 1 - Math.pow(1 - gt, 3);
+
+        lensCount = 0;
+        lensX[0] = cx; lensY[0] = cy; lensR[0] = CENTER_R * U * cScale;
+        lensCount = 1;
+
+        // 배치 전체가 모양을 유지한 채 시계방향으로 회전
+        var rot = TWO_PI * orbitTime / ORBIT_PERIOD;
+        sats.forEach(function (s) {
+          var theta = s.slot.phi + rot;
+          var rad = s.slot.r * U;
+          s.x = cx + rad * Math.sin(theta);
+          s.y = cy - rad * Math.cos(theta);
+          s.base = s.slot.size * U;
+          var age = reduce ? 1 : Math.min(1, (now - s.born) / 700);
+          s.appear = Math.max(0, easeOutBack(age));
+        });
+
+        // 커서 아래의 원 한 개만 커짐
+        var hovered = null;
+        if (pointer && !gameOpen) {
+          var best = Infinity;
+          sats.forEach(function (s) {
+            var d = Math.hypot(pointer[0] - s.x, pointer[1] - s.y);
+            if (d < s.base / 2 * s.hover * s.appear && d < best) { best = d; hovered = s; }
+          });
+        }
+        document.body.style.cursor = hovered ? 'pointer' : '';
+
+        if (hovered) {
+          var g = GAMES[hovered.game];
+          var label = g.icon + ' ' + g.name;
+          if (label !== tipText) { tip.textContent = label; tipText = label; }
+          tip.style.transform = 'translate(' + (pointer[0] + 14) + 'px,' + (pointer[1] + 14) + 'px)';
+          tip.style.opacity = 1;
+        } else {
+          tip.style.opacity = 0;
+        }
+
+        sats.forEach(function (s) {
+          var target = (s === hovered) ? HOVER : 1;
+          s.hover += (target - s.hover) * (1 - Math.exp(-dt * 14));
+          s.scale = s.appear * s.hover;
+          var size = s.base;
+          s.el.style.width = s.el.style.height = size.toFixed(2) + 'px';
+          s.el.style.transform =
+            'translate3d(' + (s.x - size / 2).toFixed(2) + 'px,' + (s.y - size / 2).toFixed(2) + 'px,0) scale(' + s.scale.toFixed(4) + ')';
+          lensX[lensCount] = s.x; lensY[lensCount] = s.y; lensR[lensCount] = size / 2 * s.scale;
+          lensCount++;
+        });
+
+        var kept = 0;
+        for (var i = 0; i < lensCount; i++) {
+          if (lensR[i] > 0.5) {
+            lensX[kept] = lensX[i]; lensY[kept] = lensY[i]; lensR[kept] = lensR[i];
+            kept++;
+          }
+        }
+        lensCount = kept;
+
+        drawGrid();
+        requestAnimationFrame(frame);
+      }
+
+      /* ───────── 5. 게임 화면 (원 10개 = 게임 10개) ───────── */
+      var gm = $('gm'), host = $('host'), gTitle = $('gtitle'), gScore = $('gscore');
+      var curGame = -1, bag = [];
+
+      function el(tag, cls, text) {
+        var e = document.createElement(tag);
+        if (cls) e.className = cls;
+        if (text != null) e.textContent = text;
+        return e;
+      }
+      function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+      function shuf(a) {
+        for (var i = a.length - 1; i > 0; i--) {
+          var j = Math.floor(Math.random() * (i + 1));
+          var t = a[i]; a[i] = a[j]; a[j] = t;
+        }
+        return a;
+      }
+      function cpos(e, c) {
+        var r = c.getBoundingClientRect();
+        return [(e.clientX - r.left) * c.lw / r.width, (e.clientY - r.top) * c.lh / r.height];
+      }
+
+      function stopGame() {
+        bag.forEach(function (f) { f(); });
+        bag = [];
+      }
+
+      function makeApi() {
+        var A = {};
+        A.host = host;
+        A.on = function (t, type, fn, opt) {
+          t.addEventListener(type, fn, opt);
+          bag.push(function () { t.removeEventListener(type, fn, opt); });
+        };
+        A.every = function (fn, ms) {
+          var id = setInterval(fn, ms);
+          bag.push(function () { clearInterval(id); });
+        };
+        A.after = function (fn, ms) {
+          var id = setTimeout(fn, ms);
+          bag.push(function () { clearTimeout(id); });
+        };
+        A.loop = function (fn) {
+          var alive = true, prev = performance.now();
+          function f(now) {
+            if (!alive) return;
+            var d = Math.min(0.05, (now - prev) / 1000);
+            prev = now;
+            fn(d, now);
+            if (alive) requestAnimationFrame(f);
+          }
+          requestAnimationFrame(f);
+          bag.push(function () { alive = false; });
+        };
+        A.score = function (t) { gScore.textContent = t; };
+        A.canvas = function (w, h) {
+          var c = document.createElement('canvas');
+          c.width = w * 2; c.height = h * 2; c.lw = w; c.lh = h;
+          c.className = 'gcanvas';
+          var g = c.getContext('2d');
+          g.scale(2, 2);
+          host.appendChild(c);
+          return { c: c, ctx: g };
+        };
+        A.over = function (msg) {
+          stopGame();
+          var r = el('div', 'res');
+          r.appendChild(el('p', null, msg));
+          var b = el('button', 'btn', '다시 하기');
+          b.type = 'button';
+          b.addEventListener('click', mountGame);
+          r.appendChild(b);
+          host.appendChild(r);
+        };
+        return A;
+      }
+
+      function mountGame() {
+        stopGame();
+        host.innerHTML = '';
+        gScore.textContent = '';
+        GAMES[curGame].mount(makeApi());
+      }
+
+      function openGame(i) {
+        curGame = i;
+        gTitle.textContent = GAMES[i].icon + ' ' + GAMES[i].name;
+        gm.classList.add('open');
+        gameOpen = true;
+        pointer = null;
+        mountGame();
+      }
+
+      function closeGame() {
+        stopGame();
+        host.innerHTML = '';
+        gm.classList.remove('open');
+        gameOpen = false;
+      }
+
+      $('gclose').addEventListener('click', closeGame);
+      gm.addEventListener('click', function (e) { if (e.target === gm) closeGame(); });
+      window.addEventListener('keydown', function (e) { if (e.key === 'Escape' && gameOpen) closeGame(); });
+
+      var BG = '#161616', ORANGE = '#ff7a00';
+
+      var GAMES = [
+        /* 1. 과녁 맞추기 */
+        { name: '과녁 맞추기', icon: '🎯', mount: function (A) {
+          var k = A.canvas(360, 480), c = k.c, g = k.ctx;
+          var score = 0, miss = 0, left = 30, t = null;
+          function show() { A.score('점수 ' + score + ' · 실수 ' + miss + ' · ' + Math.ceil(Math.max(0, left)) + '초'); }
+          function spawn(now) {
+            var r = 20 + Math.random() * 18;
+            t = { x: r + Math.random() * (360 - 2 * r), y: 50 + r + Math.random() * (480 - 70 - 2 * r), r: r, born: now || performance.now() };
+          }
+          spawn();
+          A.on(c, 'pointerdown', function (e) {
+            var p = cpos(e, c);
+            if (Math.hypot(p[0] - t.x, p[1] - t.y) <= t.r) { score++; spawn(); } else { miss++; }
+            show();
+          });
+          A.loop(function (dt, now) {
+            left -= dt;
+            if (now - t.born > 1400) { miss++; spawn(now); }
+            var life = clamp(1 - (now - t.born) / 1400, 0, 1);
+            g.fillStyle = BG; g.fillRect(0, 0, 360, 480);
+            g.fillStyle = '#2a2a2a'; g.fillRect(0, 0, 360, 8);
+            g.fillStyle = ORANGE; g.fillRect(0, 0, 360 * Math.max(0, left) / 30, 8);
+            g.fillStyle = '#fff'; g.beginPath(); g.arc(t.x, t.y, t.r, 0, TWO_PI); g.fill();
+            g.fillStyle = ORANGE; g.beginPath(); g.arc(t.x, t.y, t.r * (0.25 + 0.5 * life), 0, TWO_PI); g.fill();
+            show();
+            if (left <= 0) A.over('시간 종료! ' + score + '점 (실수 ' + miss + ')');
+          });
+        } },
+
+        /* 2. 스네이크 */
+        { name: '스네이크', icon: '🐍', mount: function (A) {
+          var k = A.canvas(360, 480), c = k.c, g = k.ctx;
+          var N = 18, M = 24, S = 20;
+          var snake = [{ x: 9, y: 12 }, { x: 8, y: 12 }, { x: 7, y: 12 }];
+          var dir = { x: 1, y: 0 }, nxt = { x: 1, y: 0 }, food = null, score = 0;
+          function place() {
+            do { food = { x: Math.floor(Math.random() * N), y: Math.floor(Math.random() * M) }; }
+            while (snake.some(function (s) { return s.x === food.x && s.y === food.y; }));
+          }
+          function turn(dx, dy) { if (dx === -dir.x && dy === -dir.y) return; nxt = { x: dx, y: dy }; }
+          function draw() {
+            g.fillStyle = BG; g.fillRect(0, 0, 360, 480);
+            g.fillStyle = ORANGE; g.beginPath(); g.arc(food.x * S + S / 2, food.y * S + S / 2, S / 2 - 3, 0, TWO_PI); g.fill();
+            snake.forEach(function (s, i) {
+              g.fillStyle = i === 0 ? '#fff' : '#cfcfcf';
+              g.fillRect(s.x * S + 1, s.y * S + 1, S - 2, S - 2);
+            });
+          }
+          place(); draw(); A.score('점수 0');
+          var keymap = { ArrowLeft: [-1, 0], a: [-1, 0], A: [-1, 0], ArrowRight: [1, 0], d: [1, 0], D: [1, 0],
+                         ArrowUp: [0, -1], w: [0, -1], W: [0, -1], ArrowDown: [0, 1], s: [0, 1], S: [0, 1] };
+          A.on(window, 'keydown', function (e) {
+            var m = keymap[e.key];
+            if (m) { e.preventDefault(); turn(m[0], m[1]); }
+          });
+          var sx = 0, sy = 0;
+          A.on(c, 'pointerdown', function (e) { sx = e.clientX; sy = e.clientY; });
+          A.on(c, 'pointerup', function (e) {
+            var dx = e.clientX - sx, dy = e.clientY - sy;
+            if (Math.max(Math.abs(dx), Math.abs(dy)) < 20) return;
+            if (Math.abs(dx) > Math.abs(dy)) turn(dx > 0 ? 1 : -1, 0); else turn(0, dy > 0 ? 1 : -1);
+          });
+          A.every(function () {
+            dir = nxt;
+            var h = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+            var eat = h.x === food.x && h.y === food.y;
+            var body = eat ? snake : snake.slice(0, -1);
+            var hit = h.x < 0 || h.y < 0 || h.x >= N || h.y >= M ||
+              body.some(function (s) { return s.x === h.x && s.y === h.y; });
+            if (hit) { draw(); A.over('게임 오버! 점수 ' + score); return; }
+            snake.unshift(h);
+            if (eat) { score++; place(); A.score('점수 ' + score); } else { snake.pop(); }
+            draw();
+          }, 120);
+        } },
+
+        /* 3. 벽돌깨기 */
+        { name: '벽돌깨기', icon: '🧱', mount: function (A) {
+          var k = A.canvas(360, 480), c = k.c, g = k.ctx;
+          var pad = { x: 142, y: 450, w: 76, h: 10 };
+          var ball = { x: 180, y: 430, vx: (Math.random() < 0.5 ? -1 : 1) * 120, vy: -250, r: 7 };
+          var cols = 8, rows = 5, bw = 40, bh = 18, bricks = [], score = 0;
+          for (var r = 0; r < rows; r++) for (var q = 0; q < cols; q++) bricks.push({ x: 20 + q * bw, y: 60 + r * (bh + 4), alive: true, row: r });
+          var total = bricks.length, left = 0, right = 0;
+          A.score('벽돌 0 / ' + total);
+          A.on(window, 'keydown', function (e) {
+            if (e.key === 'ArrowLeft') { e.preventDefault(); left = 1; }
+            if (e.key === 'ArrowRight') { e.preventDefault(); right = 1; }
+          });
+          A.on(window, 'keyup', function (e) {
+            if (e.key === 'ArrowLeft') left = 0;
+            if (e.key === 'ArrowRight') right = 0;
+          });
+          function mv(e) { pad.x = clamp(cpos(e, c)[0] - pad.w / 2, 0, 360 - pad.w); }
+          A.on(c, 'pointermove', mv);
+          A.on(c, 'pointerdown', mv);
+          var rowColors = ['#ff7a00', '#ff9a3c', '#ffb066', '#e6e6e6', '#ffffff'];
+          A.loop(function (dt) {
+            pad.x = clamp(pad.x + (right - left) * 380 * dt, 0, 360 - pad.w);
+            ball.x += ball.vx * dt; ball.y += ball.vy * dt;
+            if (ball.x < ball.r) { ball.x = ball.r; ball.vx = Math.abs(ball.vx); }
+            if (ball.x > 360 - ball.r) { ball.x = 360 - ball.r; ball.vx = -Math.abs(ball.vx); }
+            if (ball.y < ball.r) { ball.y = ball.r; ball.vy = Math.abs(ball.vy); }
+            if (ball.vy > 0 && ball.y + ball.r >= pad.y && ball.y - ball.r <= pad.y + pad.h &&
+                ball.x >= pad.x - ball.r && ball.x <= pad.x + pad.w + ball.r) {
+              ball.y = pad.y - ball.r;
+              ball.vy = -Math.min(430, Math.abs(ball.vy) * 1.03);
+              ball.vx = (ball.x - (pad.x + pad.w / 2)) / (pad.w / 2) * 280;
+            }
+            for (var i = 0; i < bricks.length; i++) {
+              var b = bricks[i];
+              if (!b.alive) continue;
+              if (ball.x + ball.r > b.x && ball.x - ball.r < b.x + bw && ball.y + ball.r > b.y && ball.y - ball.r < b.y + bh) {
+                b.alive = false; score++;
+                var ol = ball.x + ball.r - b.x, orr = b.x + bw - (ball.x - ball.r);
+                var ot = ball.y + ball.r - b.y, ob = b.y + bh - (ball.y - ball.r);
+                if (Math.min(ol, orr) < Math.min(ot, ob)) ball.vx = -ball.vx; else ball.vy = -ball.vy;
+                A.score('벽돌 ' + score + ' / ' + total);
+                break;
+              }
+            }
+            g.fillStyle = BG; g.fillRect(0, 0, 360, 480);
+            bricks.forEach(function (b) {
+              if (!b.alive) return;
+              g.fillStyle = rowColors[b.row];
+              g.fillRect(b.x + 1, b.y + 1, bw - 2, bh - 2);
+            });
+            g.fillStyle = '#fff'; g.fillRect(pad.x, pad.y, pad.w, pad.h);
+            g.fillStyle = ORANGE; g.beginPath(); g.arc(ball.x, ball.y, ball.r, 0, TWO_PI); g.fill();
+            if (score >= total) A.over('모든 벽돌을 깼어요! 🎉');
+            else if (ball.y - ball.r > 480) A.over('공을 놓쳤어요… 벽돌 ' + score + '개 깸');
+          });
+        } },
+
+        /* 4. 점프 (플래피) */
+        { name: '점프 새', icon: '🐦', mount: function (A) {
+          var k = A.canvas(360, 480), c = k.c, g = k.ctx;
+          var bird = { y: 240, vy: 0 }, BX = 90, R = 12, PW = 54, GH = 150;
+          var pipes = [], timer = 0.4, score = 0, started = false;
+          function flap() { started = true; bird.vy = -300; }
+          A.on(c, 'pointerdown', function (e) { e.preventDefault(); flap(); });
+          A.on(window, 'keydown', function (e) {
+            if (e.key === ' ' || e.key === 'ArrowUp' || e.key === 'Enter') { e.preventDefault(); flap(); }
+          });
+          A.score('점수 0');
+          A.loop(function (dt) {
+            var dead = false;
+            if (started) {
+              bird.vy += 900 * dt; bird.y += bird.vy * dt;
+              timer -= dt;
+              if (timer <= 0) { pipes.push({ x: 370, gy: 110 + Math.random() * (480 - 220), passed: false }); timer = 1.55; }
+              pipes.forEach(function (p) {
+                p.x -= 140 * dt;
+                if (!p.passed && p.x + PW < BX) { p.passed = true; score++; A.score('점수 ' + score); }
+                if (BX + R > p.x && BX - R < p.x + PW && (bird.y - R < p.gy - GH / 2 || bird.y + R > p.gy + GH / 2)) dead = true;
+              });
+              pipes = pipes.filter(function (p) { return p.x > -PW; });
+              if (bird.y < R || bird.y > 480 - R) dead = true;
+            }
+            g.fillStyle = BG; g.fillRect(0, 0, 360, 480);
+            g.fillStyle = '#fff';
+            pipes.forEach(function (p) {
+              g.fillRect(p.x, 0, PW, p.gy - GH / 2);
+              g.fillRect(p.x, p.gy + GH / 2, PW, 480 - p.gy - GH / 2);
+            });
+            g.fillStyle = ORANGE; g.beginPath(); g.arc(BX, bird.y, R, 0, TWO_PI); g.fill();
+            if (!started) {
+              g.fillStyle = '#fff'; g.font = '700 16px sans-serif'; g.textAlign = 'center';
+              g.fillText('클릭 / 스페이스로 점프', 180, 330);
+            }
+            if (dead) A.over('쿵! 점수 ' + score);
+          });
+        } },
+
+        /* 5. 틱택토 */
+        { name: '틱택토', icon: '⭕', mount: function (A) {
+          var b = ['', '', '', '', '', '', '', '', ''], done = false, busy = false, cells = [];
+          var L = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+          var wrap = el('div', 'grid3');
+          A.host.appendChild(wrap);
+          A.score('당신 ✕ · 컴퓨터 ○');
+          function win(m) { return L.some(function (l) { return l.every(function (i) { return b[i] === m; }); }); }
+          function full() { return b.every(function (v) { return v; }); }
+          function put(i, m) {
+            b[i] = m; cells[i].textContent = m === 'X' ? '✕' : '○';
+            cells[i].style.color = m === 'X' ? '#fff' : ORANGE; cells[i].disabled = true;
+          }
+          function ai() {
+            var m = null;
+            ['O', 'X'].forEach(function (mark) {
+              if (m !== null) return;
+              L.forEach(function (l) {
+                if (m !== null) return;
+                var cnt = l.filter(function (i) { return b[i] === mark; }).length;
+                var empty = l.filter(function (i) { return !b[i]; });
+                if (cnt === 2 && empty.length === 1) m = empty[0];
+              });
+            });
+            if (m === null) {
+              if (!b[4]) m = 4;
+              else {
+                var corners = [0, 2, 6, 8].filter(function (i) { return !b[i]; });
+                var all = [0,1,2,3,4,5,6,7,8].filter(function (i) { return !b[i]; });
+                var pool = corners.length ? corners : all;
+                m = pool[Math.floor(Math.random() * pool.length)];
+              }
+            }
+            put(m, 'O'); busy = false;
+            if (win('O')) { done = true; A.over('졌어요… 다시 도전!'); }
+            else if (full()) { done = true; A.over('무승부!'); }
+          }
+          for (var i = 0; i < 9; i++) (function (i) {
+            var btn = el('button', 'cell', '');
+            btn.type = 'button';
+            cells.push(btn); wrap.appendChild(btn);
+            A.on(btn, 'click', function () {
+              if (done || busy || b[i]) return;
+              put(i, 'X');
+              if (win('X')) { done = true; A.over('이겼어요! 🎉'); return; }
+              if (full()) { done = true; A.over('무승부!'); return; }
+              busy = true; A.after(ai, 350);
+            });
+          })(i);
+        } },
+
+        /* 6. 카드 짝 맞추기 */
+        { name: '카드 짝 맞추기', icon: '🃏', mount: function (A) {
+          var E = ['🍎', '🍋', '🍇', '🍉', '🍓', '🍒', '🥝', '🍑'];
+          var deck = shuf(E.concat(E)), first = null, lock = false, moves = 0, pairs = 0;
+          var wrap = el('div', 'gridN');
+          wrap.style.gridTemplateColumns = 'repeat(4, 1fr)';
+          A.host.appendChild(wrap);
+          A.score('시도 0회');
+          deck.forEach(function (f) {
+            var btn = el('button', 'card', '');
+            btn.type = 'button';
+            wrap.appendChild(btn);
+            A.on(btn, 'click', function () {
+              if (lock || btn.classList.contains('up') || btn.classList.contains('done')) return;
+              btn.classList.add('up'); btn.textContent = f;
+              if (!first) { first = { b: btn, f: f }; return; }
+              moves++; A.score('시도 ' + moves + '회');
+              var a = first; first = null;
+              if (a.f === f) {
+                a.b.classList.remove('up'); a.b.classList.add('done');
+                btn.classList.remove('up'); btn.classList.add('done');
+                pairs++;
+                if (pairs === E.length) A.over(moves + '번 만에 완성! 🎉');
+              } else {
+                lock = true;
+                A.after(function () {
+                  a.b.classList.remove('up'); a.b.textContent = '';
+                  btn.classList.remove('up'); btn.textContent = '';
+                  lock = false;
+                }, 700);
+              }
+            });
+          });
+        } },
+
+        /* 7. 숫자 맞추기 */
+        { name: '숫자 맞추기', icon: '🔢', mount: function (A) {
+          var secret = 1 + Math.floor(Math.random() * 100), tries = 8;
+          var box = el('div', 'sm');
+          var info = el('p', 'msg', '1부터 100 사이의 숫자를 맞혀보세요. 기회는 8번!');
+          var form = el('form', 'row');
+          var inp = el('input'); inp.type = 'number'; inp.min = 1; inp.max = 100; inp.placeholder = '숫자 입력';
+          inp.setAttribute('inputmode', 'numeric');
+          var ok = el('button', 'btn', '확인'); ok.type = 'submit';
+          form.appendChild(inp); form.appendChild(ok);
+          box.appendChild(info); box.appendChild(form);
+          A.host.appendChild(box);
+          A.score('남은 기회 ' + tries);
+          A.on(form, 'submit', function (e) {
+            e.preventDefault();
+            var v = parseInt(inp.value, 10);
+            if (!(v >= 1 && v <= 100)) { info.textContent = '1~100 사이 숫자를 입력하세요.'; return; }
+            tries--; inp.value = '';
+            if (v === secret) { A.over('정답! ' + (8 - tries) + '번 만에 맞혔어요 🎉'); return; }
+            if (tries <= 0) { A.over('실패! 정답은 ' + secret + '였어요'); return; }
+            info.textContent = v + '보다 ' + (v < secret ? '큽니다 ⬆' : '작습니다 ⬇');
+            A.score('남은 기회 ' + tries);
+            inp.focus();
+          });
+          inp.focus();
+        } },
+
+        /* 8. 피하기 */
+        { name: '피하기', icon: '☄️', mount: function (A) {
+          var k = A.canvas(360, 480), c = k.c, g = k.ctx;
+          var p = { x: 180, y: 410, r: 11 }, keys = {}, blocks = [], t = 0, spawn = 0.4;
+          function mv(e) { var q = cpos(e, c); p.x = clamp(q[0], p.r, 360 - p.r); p.y = clamp(q[1], p.r, 480 - p.r); }
+          A.on(c, 'pointermove', mv);
+          A.on(c, 'pointerdown', mv);
+          A.on(window, 'keydown', function (e) { if (e.key.indexOf('Arrow') === 0) { e.preventDefault(); keys[e.key] = true; } });
+          A.on(window, 'keyup', function (e) { keys[e.key] = false; });
+          A.loop(function (dt) {
+            t += dt;
+            p.x = clamp(p.x + ((keys.ArrowRight ? 1 : 0) - (keys.ArrowLeft ? 1 : 0)) * 260 * dt, p.r, 360 - p.r);
+            p.y = clamp(p.y + ((keys.ArrowDown ? 1 : 0) - (keys.ArrowUp ? 1 : 0)) * 260 * dt, p.r, 480 - p.r);
+            spawn -= dt;
+            if (spawn <= 0) {
+              var w = 24 + Math.random() * 50;
+              blocks.push({ x: Math.random() * (360 - w), y: -30, w: w, h: 18 + Math.random() * 16, v: 140 + t * 7 });
+              spawn = Math.max(0.22, 0.7 - t * 0.012);
+            }
+            var dead = false;
+            blocks.forEach(function (b) {
+              b.y += b.v * dt;
+              var nx = clamp(p.x, b.x, b.x + b.w), ny = clamp(p.y, b.y, b.y + b.h);
+              if (Math.hypot(p.x - nx, p.y - ny) < p.r - 1) dead = true;
+            });
+            blocks = blocks.filter(function (b) { return b.y < 500; });
+            g.fillStyle = BG; g.fillRect(0, 0, 360, 480);
+            g.fillStyle = '#fff';
+            blocks.forEach(function (b) { g.fillRect(b.x, b.y, b.w, b.h); });
+            g.fillStyle = ORANGE; g.beginPath(); g.arc(p.x, p.y, p.r, 0, TWO_PI); g.fill();
+            A.score(t.toFixed(1) + '초');
+            if (dead) A.over(t.toFixed(1) + '초 버텼어요!');
+          });
+        } },
+
+        /* 9. 색깔 맞추기 (글자 뜻이 아니라 글자 색을 고르기) */
+        { name: '색깔 맞추기', icon: '🎨', mount: function (A) {
+          var COL = [{ n: '빨강', c: '#ff4d4d' }, { n: '파랑', c: '#4d8bff' }, { n: '초록', c: '#3ddc84' }, { n: '노랑', c: '#ffd23f' }];
+          var score = 0, left = 30, cur = null;
+          var box = el('div', 'sm');
+          var hint = el('p', 'msg', '글자의 "뜻"이 아니라 글자의 "색"을 고르세요!');
+          var word = el('div', 'word', '');
+          var btns = el('div', 'gridN');
+          btns.style.gridTemplateColumns = 'repeat(2, 1fr)';
+          box.appendChild(hint); box.appendChild(word); box.appendChild(btns);
+          A.host.appendChild(box);
+          function show() { A.score('점수 ' + score + ' · ' + Math.ceil(Math.max(0, left)) + '초'); }
+          function next() {
+            var w = Math.floor(Math.random() * 4), ink;
+            do { ink = Math.floor(Math.random() * 4); } while (ink === w && Math.random() < 0.7);
+            cur = { w: w, ink: ink };
+            word.textContent = COL[w].n;
+            word.style.color = COL[ink].c;
+          }
+          COL.forEach(function (col, i) {
+            var b = el('button', 'cell', col.n);
+            b.type = 'button';
+            b.style.aspectRatio = 'auto'; b.style.fontSize = '22px'; b.style.padding = '16px 0';
+            btns.appendChild(b);
+            A.on(b, 'click', function () {
+              if (i === cur.ink) score++; else score = Math.max(0, score - 1);
+              next(); show();
+            });
+          });
+          next(); show();
+          A.every(function () {
+            left -= 0.1; show();
+            if (left <= 0.05) A.over('시간 종료! ' + score + '점');
+          }, 100);
+        } },
+
+        /* 10. 숫자 순서 터치 (1부터 25까지 차례로) */
+        { name: '숫자 순서 터치', icon: '👆', mount: function (A) {
+          var nums = [], i;
+          for (i = 1; i <= 25; i++) nums.push(i);
+          shuf(nums);
+          var wrap = el('div', 'gridN');
+          wrap.style.gridTemplateColumns = 'repeat(5, 1fr)';
+          A.host.appendChild(wrap);
+          var nextNum = 1, start = performance.now();
+          function show() { A.score('다음 ' + nextNum + ' · ' + ((performance.now() - start) / 1000).toFixed(1) + '초'); }
+          nums.forEach(function (n) {
+            var b = el('button', 'cell', String(n));
+            b.type = 'button'; b.style.fontSize = '22px';
+            wrap.appendChild(b);
+            A.on(b, 'click', function () {
+              if (n === nextNum) {
+                b.style.background = ORANGE; b.disabled = true; nextNum++;
+                if (nextNum > 25) { A.over(((performance.now() - start) / 1000).toFixed(1) + '초 만에 완료! 🎉'); return; }
+                show();
+              } else {
+                b.style.background = '#7a2a2a';
+                A.after(function () { b.style.background = ''; }, 200);
+              }
+            });
+          });
+          show();
+          A.every(show, 100);
+        } }
+      ];
+
+      requestAnimationFrame(frame);
+    })();
+  </script>
+</body>
+</html>
